@@ -24,6 +24,13 @@ library(randomcoloR)
 library(plotly)
 library(data.table)
 library(gridExtra)
+library(printr)
+library(plot3D)
+
+options(rgl.useNULL=TRUE)
+library(rgl)
+library(plot3Drgl)
+library(shinyRGL)
 
 iris_dt <- as.data.table(iris)
 
@@ -41,6 +48,9 @@ knitr::opts_chunk$set(echo = FALSE
 <embed src ="../dashboard/flex.Rmd" height=700px width=700px />
 -->
 
+<!--
+<embed src ="../radiant/inst/app" height=1500px width=2000px />
+-->
 
 ## The "iris" dataset
 
@@ -48,7 +58,7 @@ knitr::opts_chunk$set(echo = FALSE
 - The data set contains 3 classes of 50 instances each, where each class refers to a type of iris plant.
 
 Info on dataset is as follow
-```{r iris, eval = TRUE, exercise = TRUE, echo = FALSE}
+```{r iris, eval = TRUE, echo = FALSE}
 help(iris)
 ```
 
@@ -74,9 +84,6 @@ frameWidget(dt, height = 350, width = '95%')
 
 ```
 
-
-
-
 <!--
 <p>
 <embed src="../data/iris.Rmd" style="width:300%;height:300%;">
@@ -91,7 +98,6 @@ frameWidget(dt, height = 350, width = '95%')
 <!--
 <embed src ="../data/iris.Rmd" height=700px width=700px />
 -->
-
 
 <!--
 ![](../data/iris.Rmd)
@@ -121,11 +127,8 @@ DT1 <- DT::formatStyle(DT1,
                                                           cols)
                       )
 
-#DT1
-#widgetframe::frameWidget(DT1, height = 350, width = '95%')
 widgetframe::frameWidget(DT1, height = 700, width = 700)
 #DT::renderDT(DT1)
-
 
 ```
 
@@ -134,9 +137,18 @@ widgetframe::frameWidget(DT1, height = 700, width = 700)
 
 ## Summarize the data
 
-### Species categories
+### Structure of the data
 
-As we see, there are three categories of species in the dataset:
+We can first view the structure of the data: The classes of variables and some additional info
+
+```{r, eval = TRUE, echo = FALSE}
+str(iris_dt)
+```
+
+So the first four variables are numeric variables whereas Species variable is "factor" - so it is categoric.
+
+
+As we see, there are three categories of Species in the dataset:
 
 ```{r levels1, results = 'asis', eval = TRUE, echo = FALSE}
 levs %>%
@@ -147,7 +159,7 @@ levs %>%
 
 ```
 
-
+<!--
 ### Summarize the data with rpivotTable:
 
 Now take your time to play with the data using the below rpivotTable:
@@ -177,7 +189,7 @@ val2 <- iris_dt %>%
 ```
 
 So the count of observations where **`r names(iris_dt)[5]`** column is **"`r var1`"** is **`r val1`**.
-
+-->
 
 ### Summarize the dataset
 
@@ -240,11 +252,102 @@ output$bar_1 <- renderPlotly({
 
 - As we see, especially Sepal.Length, Petal.Length and Petal.Width varies much across Species categories. 
 
+We can also combine two variables to get a 3D view of a histogram:
+
+```{r, echo = FALSE}
+
+cuts <- 1:20
+
+selectInput("var_11", label = "Variable 1:",
+            choices = vars, selected = vars[1])
+selectInput("var_12", label = "Variable 2:",
+            choices = vars, selected = vars[2])
+selectInput("var_13", label = "Category:",
+            choices = levs, selected = levs[1])
+sliderInput("var_10", label = "Number of Bins", min = 1, max = 10, value = 5, width = 300)
+
+rgl::rglwidgetOutput("hist3d", width = 750, height = 600)
+```
+
+```{r, echo = FALSE, context = "server"}
+output$hist3d <- rgl::renderRglwidget({
+  irissub <- iris_dt %>%
+      dplyr::filter( Species == input$var_13)
+      
+  x2 <- irissub[[input$var_11]]
+  y2 <- irissub[[input$var_12]]
+  labx <- input$var_11
+  laby <- input$var_12
+  bins <- input$var_10
+  
+  ##  Create cuts:
+  x_c <- cut(x2, as.integer(bins))
+  y_c <- cut(y2, as.integer(bins))
+
+  ##  Calculate joint counts at cut levels:
+  z1 <- table(x_c, y_c)
+
+  ## Calculate break points
+  breaks <- function(vec) (max(vec) - min(vec)) / bins * 1:bins + min(vec)
+
+  xb <- breaks(x2)
+  yb <- breaks(y2)
+  
+  ##  Plot as a 3D histogram:
+  hist3D1 <- plot3Drgl::hist3Drgl(x = xb,
+                                  y = yb,
+                                  z = z1,
+                                  axes = T,
+                                  label = T,
+                                  xlab = labx,
+                                  ylab = laby,
+                                  zlab = "frequencies",
+                                  nticks = bins,
+                                  ticktype = "detailed"
+                                  )
+  scene <- scene3d()
+  rgl::rglwidget(scene)
+
+})
+
+```
+
+You can rotate the plot in any direction with the mouse to have a better view.
+
+With the default selections, the 3D histogram of the Sepal.Width vs. Sepal.Length variables for setosa species show that, there is concentration of observations where Sepal.Width is between 3.5-4 and Sepal.Length is between 5-5.5. Scatter plots will confirm this finding.
+
+
+And density plots are yet another way to visualize the distribution of a variable across categories:
+
+```{r, echo = FALSE}
+vars <- names(iris_dt)[1:4]
+
+plotlyOutput("density_1")
+selectInput("var_21", label = "Variable:",
+            choices = vars, selected = vars[1])
+```
+
+```{r, context = "server"}
+output$density_1 <- renderPlotly({
+  p1 <-  ggplot(iris_dt, mapping = aes(iris_dt[[input$var_21]],
+                                 color = factor(iris_dt[["Species"]])
+)) +
+        geom_density(adjust =5, mapping = aes(text = paste("Species", ": ", iris_dt[["Species"]], "\n", input$var_21, ": ", iris_dt[[input$var_21]]))) +
+        
+        guides(color=guide_legend(title=NULL)) +
+        labs(x = input$var_21)
+        
+  ggplotly(p1, tooltip = c("text"))
+
+})
+```
+
 ## Scatter Plots
 
 - Now we create scatter plots between selected variables
 - Please select two different variables from the dropdown menus
 - Note that observations of different species are colored respectively:
+
 
 ```{r, echo = FALSE}
 vars <- names(iris_dt)[1:4]
@@ -279,6 +382,38 @@ You can:
 
 - Hover over points to get info on the data,
 - Click on the Species categories on the legend to hide or show respective points  
+
+We can also create a 3d version of this scatterplot:
+
+```{r, echo = FALSE}
+vars <- names(iris_dt)[1:4]
+
+plotlyOutput("scatter_2", width = 900, height = 600)
+selectInput("var_31", label = "Variable 1:",
+            choices = vars, selected = vars[1])
+selectInput("var_32", label = "Variable 2:",
+            choices = vars, selected = vars[2])
+```
+
+```{r, context = "server"}
+output$scatter_2 <- renderPlotly({
+  
+    plot_ly(x = iris_dt[[input$var_31]],
+          y = iris_dt[[input$var_32]],
+          z = iris_dt[["Species"]],
+          type = "scatter3d",
+          color = iris_dt[["Species"]]) %>%
+    plotly::layout(scene = list(
+      xaxis = list(title = input$var_31),
+      yaxis = list(title = input$var_32),
+      zaxis = list(title = "Species")))
+
+    
+})
+
+  
+
+```
 
 
 ## Task: Learn from labeled observations
@@ -322,11 +457,11 @@ by Rajan Girsa
 
 
 ### K NEAREST NEIGHBOR : STEP BY STEP TUTORIAL
-[K NEAREST NEIGHBOR : STEP BY STEP TUTORIAL](https://www.listendata.com/2017/12/k-nearest-neighbor-step-by-step-tutorial.html)
-
-[K NEAREST NEIGHBOR : STEP BY STEP TUTORIAL (R-Bloggers link)](https://www.r-bloggers.com/k-nearest-neighbor-step-by-step-tutorial/)
-
+<a href="https://www.listendata.com/2017/12/k-nearest-neighbor-step-by-step-tutorial.html" target="_blank" rel="noopener">K NEAREST NEIGHBOR : STEP BY STEP TUTORIAL</a>
 by Deepanshu Bhalla
+<!--
+[K NEAREST NEIGHBOR : STEP BY STEP TUTORIAL (R-Bloggers link)](https://www.r-bloggers.com/k-nearest-neighbor-step-by-step-tutorial/)
+-->
 
 ## How KNN works
 
@@ -357,7 +492,7 @@ $$
 $$
 
 
-After calculating the distances, we arbitrarily choose a "k" value for the nearest neighbours - the points with least distance to unlabeled $\red$ point
+After calculating the distances, we arbitrarily choose a "k" value for the nearest neighbours - the number of points with least distance to unlabeled $\red$ point
 
 Reverting back to the knn diagram:
 
@@ -368,11 +503,11 @@ If we choose k = 3, the inner circle shows the nearest 3 neighbours of $\red$:
 - We see that two neighbours are $\green$ and one neighbour is $\blue$
 - With majority vote, $\red$ point is now labeled as $\green$
 
-However if we chhose k = 7, the outer circle shows the nearest 7 neighbours of $\red$:
+However if we choose k = 7, the outer circle shows the nearest 7 neighbours of $\red$:
 
 - We see that three neighbours are $\green$ and four neighbours are $\blue$
 - With majority vote, $\red$ point is now labeled as $\blue$
 
-So the choice of k is decisive on the labeling of unlabeled points. Note that we should select an odd k in order to prevent tie vote issues (multiple categories with the same vote)
+So the choice of k is decisive on the labeling of unlabeled points. Note that we should select an odd k in order to prevent tie vote issues (multiple categories with the same number of votes)
 
 ## Applying KNN algorithm on iris dataset
